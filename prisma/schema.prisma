@@ -1,0 +1,558 @@
+// =============================================================================
+// 汽修管家 (AutoRepair Manager) — Prisma Schema
+// -----------------------------------------------------------------------------
+// 设计要点：
+// 1. 金额统一使用 Decimal(14,2)，绝不使用浮点数
+// 2. 数量统一使用 Decimal(12,2)（支持 0.5L 机油这类小数数量）
+// 3. 时间字段统一 createdAt / updatedAt / deletedAt(软删除)
+// 4. 搜索字段全部建立索引（车牌、手机号、工单号、配件名、VIN）
+// 5. 目录表（Part / ServiceItem）与业务快照（WorkOrderItem）分离：
+//    历史工单不受目录改价影响，保证财务数据可追溯
+// 6. 库存三张表：Part(档案) / Inventory(当前库存) / InventoryTransaction(流水)
+//    Inventory.quantity 为库存唯一真相来源，流水留痕且不可变
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// 枚举
+// ---------------------------------------------------------------------------
+
+/// 账号角色
+enum Role {
+  ADMIN // 管理员：全部数据 + 改价 + 删除 + 财务 + 员工管理
+  STAFF // 员工：建单 / 改自己的单 / 客户车辆 / 加项加料 / 收款
+}
+
+/// 工单状态（严格按店内实际流转顺序）
+enum WorkOrderStatus {
+  PENDING_INTAKE // 待接车
+  IN_PROGRESS // 维修中
+  PENDING_QC // 待质检
+  PENDING_PAYMENT // 待付款
+  COMPLETED // 已完成
+  CANCELLED // 已取消
+}
+
+/// 工单项类型：维修项目 / 配件 / 工时 / 其他费用
+enum WorkOrderItemType {
+  SERVICE // 维修项目
+  PART // 配件
+  LABOR // 工时
+  OTHER // 其他费用
+}
+
+/// 支付方式
+enum PaymentMethod {
+  CASH // 现金
+  WECHAT // 微信
+  ALIPAY // 支付宝
+  BANK_CARD // 银行卡 / 转账
+  OTHER // 其他
+}
+
+/// 库存流水类型
+enum InventoryTxType {
+  PURCHASE_IN // 采购入库
+  WORKORDER_OUT // 工单出库
+  RETURN_IN // 退货/退单回滚入库
+  ADJUST // 手工调整
+  STOCKTAKE // 盘点
+}
+
+/// 支出分类
+enum ExpenseCategory {
+  PART_PURCHASE // 配件采购
+  RENT // 房租
+  UTILITY // 水电
+  SALARY // 工资
+  TOOL_EQUIPMENT // 工具设备
+  LOGISTICS // 物流
+  OTHER // 其他支出
+}
+
+/// 收入分类
+enum IncomeCategory {
+  REPAIR_SERVICE // 维修收入
+  PART_SALE // 配件收入
+  LABOR // 工时收入
+  OTHER // 其他收入
+}
+
+/// 收入来源：工单收款 / 手工登记
+enum IncomeSource {
+  WORK_ORDER // 工单收款
+  MANUAL // 手工登记（如废品收入）
+}
+
+/// 目录分类归属
+enum CategoryKind {
+  PART // 配件分类
+  SERVICE // 维修项目分类
+  EXPENSE // 支出分类
+  INCOME // 收入分类
+}
+
+// ---------------------------------------------------------------------------
+// 账号 / 会话 / 员工
+// ---------------------------------------------------------------------------
+
+/// 系统登录账号
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  name         String
+  phone        String?
+  passwordHash String
+  role         Role      @default(STAFF)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  sessions            Session[]
+  createdWorkOrders   WorkOrder[]            @relation("WorkOrderCreatedBy")
+  payments            Payment[]
+  expenses            Expense[]
+  inventoryTxs        InventoryTransaction[]
+  auditLogs           AuditLog[]
+  customers           Customer[]             @relation("CustomerCreatedBy")
+  serviceRecords      VehicleServiceRecord[] @relation("ServiceRecordCreatedBy")
+  employee            Employee?
+
+  @@index([role])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+/// 登录会话（服务端 httpOnly Cookie 存储签名后的 token）
+model Session {
+  id        String    @id /// 随机 token（数据库中仅存哈希）
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  userAgent String?
+  ip        String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// 员工档案（技师）。可与登录账号绑定，也可仅作为排班/提成档案存在。
+model Employee {
+  id            String    @id @default(cuid())
+  name          String
+  phone         String?
+  position      String? /// 岗位：机修 / 钣金 / 喷漆 / 前台
+  isTechnician  Boolean   @default(true)
+  userId        String?   @unique
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  isActive      Boolean   @default(true)
+  remark        String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  workOrders WorkOrder[]
+
+  @@index([name])
+  @@index([isActive])
+  @@map("employees")
+}
+
+// ---------------------------------------------------------------------------
+// 客户 / 车辆
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id        String    @id @default(cuid())
+  name      String
+  phone     String
+  wechat    String? /// 微信备注（昵称 / 微信号）
+  address   String?
+  remark    String?
+  createdBy String?
+  creator   User?     @relation("CustomerCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  vehicles   Vehicle[]
+  workOrders WorkOrder[]
+  payments   Payment[]
+
+  // 手机号、姓名是最高频查询字段
+  @@index([phone])
+  @@index([name])
+  @@index([createdAt])
+  @@map("customers")
+}
+
+model Vehicle {
+  id             String    @id @default(cuid())
+  customerId     String
+  customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  plateNumber    String /// 车牌号（重要查询字段）
+  brand          String?
+  model          String?
+  year           Int?
+  vin            String?
+  engineNo       String?
+  currentMileage Int?
+  lastServiceAt  DateTime?
+  nextServiceAt  DateTime?
+  remark         String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  workOrders     WorkOrder[]
+  serviceRecords VehicleServiceRecord[]
+
+  @@index([plateNumber])
+  @@index([vin])
+  @@index([customerId])
+  @@index([nextServiceAt])
+  @@map("vehicles")
+}
+
+/// 保养记录（工单完工时自动生成，也可手工补录）
+model VehicleServiceRecord {
+  id              String    @id @default(cuid())
+  vehicleId       String
+  vehicle         Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  workOrderId     String?
+  workOrder       WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+  servicedAt      DateTime
+  mileage         Int?
+  description     String
+  nextServiceAt   DateTime?
+  nextServiceMileage Int?
+  createdBy       String?
+  creator         User?     @relation("ServiceRecordCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt       DateTime  @default(now())
+
+  @@index([vehicleId, servicedAt])
+  @@index([workOrderId])
+  @@map("vehicle_service_records")
+}
+
+// ---------------------------------------------------------------------------
+// 维修工单
+// ---------------------------------------------------------------------------
+
+model WorkOrder {
+  id               String          @id @default(cuid())
+  orderNo          String          @unique /// 工单编号 RO20260914001
+  status           WorkOrderStatus @default(PENDING_INTAKE)
+
+  customerId       String
+  customer         Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  vehicleId        String
+  vehicle          Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+
+  mileage          Int? /// 进厂里程
+  faultDescription String? /// 故障描述
+  remark           String?
+
+  technicianId     String?
+  technician       Employee?       @relation(fields: [technicianId], references: [id], onDelete: SetNull)
+  createdBy        String?
+  creator          User?           @relation("WorkOrderCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  // ---- 金额（全部为 Decimal，由 server 端统一计算后落库）----
+  serviceAmount    Decimal         @default(0) @db.Decimal(14, 2) /// 维修项目费
+  partsAmount      Decimal         @default(0) @db.Decimal(14, 2) /// 配件费
+  laborAmount      Decimal         @default(0) @db.Decimal(14, 2) /// 工时费
+  otherAmount      Decimal         @default(0) @db.Decimal(14, 2) /// 其他费用
+  discountAmount   Decimal         @default(0) @db.Decimal(14, 2) /// 优惠
+  totalAmount      Decimal         @default(0) @db.Decimal(14, 2) /// 应收金额 = 小计 - 优惠
+  paidAmount       Decimal         @default(0) @db.Decimal(14, 2) /// 已收金额
+  partsCost        Decimal         @default(0) @db.Decimal(14, 2) /// 配件成本（毛利用）
+
+  completedAt      DateTime?
+  cancelledAt      DateTime?
+  cancelReason     String?
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deletedAt        DateTime?
+
+  items           WorkOrderItem[]
+  payments        Payment[]
+  expenses        Expense[]
+  inventoryTxs    InventoryTransaction[]
+  serviceRecords  VehicleServiceRecord[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([customerId])
+  @@index([vehicleId])
+  @@index([technicianId])
+  @@index([completedAt])
+  @@map("work_orders")
+}
+
+/// 工单项（维修项目 / 配件 / 工时 / 其他费用）
+/// name / unitPrice / costPrice 均为下单时快照，目录改价不影响历史工单
+model WorkOrderItem {
+  id          String            @id @default(cuid())
+  workOrderId String
+  workOrder   WorkOrder         @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  type        WorkOrderItemType
+  itemRefId   String? /// ServiceItem.id 或 Part.id（多态引用，不做外键约束，避免删除目录时破坏历史）
+  name        String
+  spec        String?
+  unit        String?
+  quantity    Decimal           @default(1) @db.Decimal(12, 2)
+  unitPrice   Decimal           @default(0) @db.Decimal(14, 2)
+  costPrice   Decimal           @default(0) @db.Decimal(14, 2) /// 成本单价（配件取库存均价，工时取人工成本）
+  amount      Decimal           @default(0) @db.Decimal(14, 2) /// = quantity * unitPrice
+  remark      String?
+  sortOrder   Int               @default(0)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([workOrderId])
+  @@index([type])
+  @@index([itemRefId])
+  @@map("work_order_items")
+}
+
+// ---------------------------------------------------------------------------
+// 收款 / 支出
+// ---------------------------------------------------------------------------
+
+/// 收款流水（一笔工单可多次部分收款）
+model Payment {
+  id          String        @id @default(cuid())
+  workOrderId String?
+  workOrder   WorkOrder?    @relation(fields: [workOrderId], references: [id], onDelete: Restrict)
+  customerId  String?
+  customer    Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  source      IncomeSource  @default(WORK_ORDER)
+  category    IncomeCategory @default(REPAIR_SERVICE)
+  amount      Decimal       @db.Decimal(14, 2)
+  method      PaymentMethod @default(CASH)
+  occurredAt  DateTime      @default(now())
+  operatorId  String?
+  operator    User?         @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+  remark      String?
+  createdAt   DateTime      @default(now())
+  deletedAt   DateTime?
+
+  @@index([workOrderId])
+  @@index([occurredAt])
+  @@index([customerId])
+  @@index([deletedAt])
+  @@map("payments")
+}
+
+/// 支出流水
+model Expense {
+  id          String          @id @default(cuid())
+  category    ExpenseCategory
+  amount      Decimal         @db.Decimal(14, 2)
+  method      PaymentMethod   @default(CASH)
+  occurredAt  DateTime        @default(now())
+  supplierId  String?
+  supplier    Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  workOrderId String?
+  workOrder   WorkOrder?      @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+  operatorId  String?
+  operator    User?           @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+  remark      String?
+  createdAt   DateTime        @default(now())
+  deletedAt   DateTime?
+
+  @@index([occurredAt])
+  @@index([category])
+  @@index([deletedAt])
+  @@map("expenses")
+}
+
+// ---------------------------------------------------------------------------
+// 配件 / 库存
+// ---------------------------------------------------------------------------
+
+model Category {
+  id        String       @id @default(cuid())
+  name      String
+  kind      CategoryKind
+  sortOrder Int          @default(0)
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  parts       Part[]
+  serviceItems ServiceItem[]
+
+  @@unique([kind, name])
+  @@index([kind])
+  @@map("categories")
+}
+
+/// 配件档案（目录）
+model Part {
+  id         String    @id @default(cuid())
+  code       String? /// 自编配件编码
+  name       String
+  spec       String? /// 规格型号
+  brand      String?
+  unit       String    @default("个")
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  costPrice Decimal   @default(0) @db.Decimal(14, 2) /// 最近进货价
+  salePrice Decimal   @default(0) @db.Decimal(14, 2) /// 销售价
+  isActive  Boolean   @default(true)
+  remark    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  inventory    Inventory?
+  transactions InventoryTransaction[]
+
+  @@index([name])
+  @@index([code])
+  @@index([categoryId])
+  @@index([isActive])
+  @@map("parts")
+}
+
+/// 当前库存状态（与 Part 一对一）
+model Inventory {
+  id           String   @id @default(cuid())
+  partId       String   @unique
+  part         Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
+  quantity     Decimal  @default(0) @db.Decimal(12, 2) /// 当前库存数量
+  safeQuantity Decimal  @default(0) @db.Decimal(12, 2) /// 安全库存
+  avgCost      Decimal  @default(0) @db.Decimal(14, 2) /// 移动加权平均成本
+  location     String? /// 货架位置
+  updatedAt    DateTime @updatedAt
+
+  @@index([quantity])
+  @@map("inventories")
+}
+
+/// 库存流水（只增不改，完整留痕）
+model InventoryTransaction {
+  id          String          @id @default(cuid())
+  partId      String
+  part        Part            @relation(fields: [partId], references: [id], onDelete: Restrict)
+  type        InventoryTxType
+  quantity    Decimal         @db.Decimal(12, 2) /// 变动数量（正数，方向由 type 决定）
+  qtyBefore   Decimal         @db.Decimal(12, 2)
+  qtyAfter    Decimal         @db.Decimal(12, 2)
+  unitCost    Decimal?        @db.Decimal(14, 2)
+  amount      Decimal?        @db.Decimal(14, 2)
+  workOrderId String?
+  workOrder   WorkOrder?      @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+  operatorId  String?
+  operator    User?           @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+  remark      String?
+  createdAt   DateTime        @default(now())
+
+  @@index([partId, createdAt])
+  @@index([workOrderId])
+  @@index([type])
+  @@map("inventory_transactions")
+}
+
+model Supplier {
+  id        String    @id @default(cuid())
+  name      String
+  contact   String?
+  phone     String?
+  address   String?
+  remark    String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  parts   Part[]
+  expenses Expense[]
+
+  @@index([name])
+  @@map("suppliers")
+}
+
+// ---------------------------------------------------------------------------
+// 维修项目 / 工时 目录
+// ---------------------------------------------------------------------------
+
+model ServiceItem {
+  id           String    @id @default(cuid())
+  code         String?
+  name         String
+  kind         WorkOrderItemType @default(SERVICE) /// SERVICE=维修项目, LABOR=工时
+  categoryId   String?
+  category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  unit         String    @default("项")
+  defaultPrice Decimal   @default(0) @db.Decimal(14, 2)
+  defaultHours Decimal?  @db.Decimal(6, 2)
+  costPrice    Decimal   @default(0) @db.Decimal(14, 2) /// 人工成本参考（毛利计算）
+  isActive     Boolean   @default(true)
+  sortOrder    Int       @default(0)
+  remark       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  @@index([name])
+  @@index([kind])
+  @@index([isActive])
+  @@map("service_items")
+}
+
+// ---------------------------------------------------------------------------
+// 审计日志 / 系统设置
+// ---------------------------------------------------------------------------
+
+/// 审计日志：删除工单 / 改价 / 改收款 / 库存调整 / 删除客户 / 删除配件
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userName  String? /// 冗余快照，用户被删也能追溯
+  action    String /// WORK_ORDER_DELETE / PRICE_UPDATE / ...
+  entity    String /// work_order / part / customer ...
+  entityId  String
+  summary   String?
+  before    Json?
+  after     Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@index([userId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+/// 轻量键值设置（店铺名称、默认费率等）
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
+}

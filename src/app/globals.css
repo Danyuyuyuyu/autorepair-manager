@@ -1,0 +1,198 @@
+@import "tailwindcss";
+
+/* Tailwind v4 自动扫描源；显式声明避免遗漏动态类名文件 */
+@source "../";
+
+/* ===========================================================================
+   设计令牌（Design Token）—— 全系统唯一色彩 / 圆角 / 阴影来源
+   组件中禁止写死 hex 色值，一律使用这里的语义类名
+   =========================================================================== */
+@theme {
+  /* ---- 字体 ---- */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+
+  /* ---- 中性色 ---- */
+  --color-background: #f4f5f7;
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-muted: #f1f2f5;
+  --color-muted-foreground: #64748b;
+  --color-subtle-foreground: #94a3b8;
+  --color-border: #e6e8ec;
+  --color-border-strong: #d3d7de;
+  --color-input: #e6e8ec;
+  --color-overlay: rgb(15 23 42 / 0.45);
+
+  /* ---- 品牌色 ---- */
+  --color-brand: #2563eb;
+  --color-brand-hover: #1d4ed8;
+  --color-brand-strong: #1d4ed8;
+  --color-brand-soft: #eff6ff;
+  --color-brand-border: #bfdbfe;
+  --color-brand-foreground: #ffffff;
+
+  /* ---- 成功 ---- */
+  --color-success: #16a34a;
+  --color-success-strong: #15803d;
+  --color-success-soft: #f0fdf4;
+  --color-success-border: #bbf7d0;
+  --color-success-foreground: #ffffff;
+
+  /* ---- 警告 ---- */
+  --color-warning: #f59e0b;
+  --color-warning-strong: #b45309;
+  --color-warning-soft: #fffbeb;
+  --color-warning-border: #fde68a;
+  --color-warning-foreground: #ffffff;
+
+  /* ---- 危险 ---- */
+  --color-danger: #dc2626;
+  --color-danger-hover: #b91c1c;
+  --color-danger-strong: #b91c1c;
+  --color-danger-soft: #fef2f2;
+  --color-danger-border: #fecaca;
+  --color-danger-foreground: #ffffff;
+
+  /* ---- 信息 ---- */
+  --color-info: #0ea5e9;
+  --color-info-strong: #0369a1;
+  --color-info-soft: #f0f9ff;
+  --color-info-border: #bae6fd;
+
+  /* ---- 圆角 ---- */
+  --radius-control: 0.75rem; /* 按钮 / 输入框 12px */
+  --radius-card: 1rem; /* 卡片 16px */
+  --radius-sheet: 1.25rem; /* 底部抽屉 20px */
+
+  /* ---- 阴影（轻量，不做重投影） ---- */
+  --shadow-soft: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+  --shadow-card: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.04);
+  --shadow-raised: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 6px -2px rgb(15 23 42 / 0.04);
+  --shadow-nav: 0 -1px 0 0 var(--color-border);
+  --shadow-sheet: 0 -8px 32px -8px rgb(15 23 42 / 0.18);
+
+  /* ---- 间距扩展：触控最小尺寸 44px ---- */
+  --spacing-touch: 2.75rem;
+  --spacing-nav: 4rem;
+}
+
+/* ===========================================================================
+   基础样式
+   =========================================================================== */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
+    /* 移动端避免横向滚动 */
+    overflow-x: hidden;
+    overscroll-behavior-y: none;
+  }
+
+  /* 输入框在 iOS 上小于 16px 会触发自动缩放，此处统一 */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  /* 隐藏 number input 的上下箭头 */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  ::selection {
+    background-color: var(--color-brand-soft);
+    color: var(--color-brand-strong);
+  }
+}
+
+/* ===========================================================================
+   自定义工具类
+   =========================================================================== */
+
+/* 底部安全区（iPhone 全面屏） */
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@utility mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+@utility h-safe-bottom {
+  height: env(safe-area-inset-bottom, 0px);
+}
+
+/* 隐藏滚动条但保留滚动能力 */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* 横向滚动吸附（移动端筛选 chips） */
+@utility snap-x-row {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 数字等宽显示（金额对齐） */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* 单行省略 */
+@utility truncate-1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 两行省略 */
+@utility truncate-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 移动端主内容区底部留白，避免被底部导航遮挡 */
+@utility pb-nav {
+  padding-bottom: calc(var(--spacing-nav) + env(safe-area-inset-bottom, 0px) + 1rem);
+}
+
+/* 安全区感知的动画 */
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}

@@ -1,0 +1,10 @@
+node_modules
+.next
+.next*
+out
+build
+pnpm-lock.yaml
+.devdb
+public/sw.js
+# 改造前的基线快照（只用于人工比对与回滚，不参与格式化）
+.baseline

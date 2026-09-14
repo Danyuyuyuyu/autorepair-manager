@@ -1,0 +1,67 @@
+# =============================================================================
+# 汽修管家 —— 生产部署编排
+# -----------------------------------------------------------------------------
+# 用法：
+#   1. 复制 .env.example 为 .env，修改 AUTH_SECRET 与数据库密码
+#   2. docker compose up -d --build
+#   3. 首次启动后执行初始化：docker compose exec app pnpm db:seed
+# =============================================================================
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: autorepair-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-autorepair}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autorepair_pwd}
+      POSTGRES_DB: ${POSTGRES_DB:-autorepair}
+      # 中文排序与大小写不敏感搜索依赖，建议保持
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      # 仅本机可访问，避免数据库直接暴露到公网
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-autorepair} -d ${POSTGRES_DB:-autorepair}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: autorepair-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-autorepair}:${POSTGRES_PASSWORD:-autorepair_pwd}@db:5432/${POSTGRES_DB:-autorepair}?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET 必须设置}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-7}
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-汽车维修店管理系统}
+      NEXT_PUBLIC_APP_SHORT_NAME: ${NEXT_PUBLIC_APP_SHORT_NAME:-汽修管家}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+volumes:
+  db-data:
+    driver: local
