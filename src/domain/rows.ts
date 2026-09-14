@@ -410,10 +410,27 @@ export interface SearchPartRow {
   safeQuantity: Money | null;
 }
 
+/**
+ * 车牌联想候选行（新建工单的「输入部分车牌」用）。
+ *
+ * 注意 `limit` 是「取数窗口」而不是最终条数：仓储只负责按 `updatedAt` 倒序
+ * 取一个放大的窗口，业务层再用 `rankPlateCandidates`（src/lib/plate.ts）
+ * 做「前缀命中优先」重排后截断 —— Prisma 的 orderBy 无法表达前缀优先，
+ * 硬写进 SQL 会让 PostgreSQL 与 SQLite 两种实现行为分叉（ADR-017）。
+ */
 export interface VehicleSuggestionRow {
   id: string;
   plateNumber: string;
+  brand: string | null;
+  model: string | null;
+  /** 完整 VIN；对外只透出后 4 位 */
+  vin: string | null;
   customerName: string;
+  /** 最近一次进厂 = 未删除工单里最大的 createdAt；从未进厂为 null */
+  lastVisitAt: Date | null;
+  /** 累计维修工单数（不含已删除工单） */
+  workOrderCount: number;
+  updatedAt: Date;
 }
 
 export interface CustomerSuggestionRow {

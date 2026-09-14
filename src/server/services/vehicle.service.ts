@@ -2,6 +2,14 @@ import "server-only";
 
 import type { Repositories } from "@/domain/repositories";
 import { D, money, sumMoney } from "@/lib/money";
+import {
+  PLATE_SUGGEST_LIMIT,
+  PLATE_SUGGEST_MAX_WINDOW,
+  PLATE_SUGGEST_MIN_LENGTH,
+  PLATE_SUGGEST_WINDOW_FACTOR,
+  plateMatchKeyword,
+  rankPlateCandidates,
+} from "@/lib/plate";
 import { writeAuditLog } from "@/server/auth/audit";
 import { repos as defaultRepos, transaction } from "@/server/context";
 import { BusinessRuleError, NotFoundError } from "@/server/errors";
@@ -73,6 +81,64 @@ export async function findVehicleByPlate(plate: string, repos: Repositories = de
       mileage: o.mileage,
       totalAmount: money(o.totalAmount).toFixed(2),
     })),
+  };
+}
+
+/** 新建工单「输入部分车牌」的候选行（ADR-017） */
+export interface PlateSuggestionDTO {
+  id: string;
+  plateNumber: string;
+  brand: string | null;
+  model: string | null;
+  /** 只透出 VIN 后 4 位：同客户名下同款车靠它区分，又不外泄完整车架号 */
+  vinLast4: string | null;
+  customerName: string;
+  /** 最近一次进厂（ISO 字符串）；从未进厂为 null */
+  lastVisitAt: string | null;
+  /** 累计维修次数 */
+  workOrderCount: number;
+}
+
+/**
+ * 按车牌片段给出候选车辆（新建工单的联想，ADR-017）。
+ *
+ * 三层职责刻意分开，为的是两种存储行为完全一致：
+ *   1. 关键字归一化 + 摘除通配符 → `plateMatchKeyword`（纯函数）
+ *   2. 仓储只按 updatedAt 倒序取一个**放大的窗口**
+ *   3. 「前缀命中优先」重排 → `rankPlateCandidates`（纯函数）
+ */
+export interface PlateSuggestionResult {
+  items: PlateSuggestionDTO[];
+  /** 是否还有更多候选（受取数窗口限制，不保证精确条数） */
+  hasMore: boolean;
+}
+
+export async function suggestVehiclesByPlate(
+  rawPlate: string,
+  limit: number = PLATE_SUGGEST_LIMIT,
+  repos: Repositories = defaultRepos,
+): Promise<PlateSuggestionResult> {
+  const keyword = plateMatchKeyword(rawPlate);
+  // 单字不查：车牌首字是省份简称，输「粤」会刷出一屏。
+  // 注意这里用的是「摘除通配符后」的关键字，否则用户输入 %% 会被当成 2 个有效字符。
+  if (keyword.length < PLATE_SUGGEST_MIN_LENGTH) return { items: [], hasMore: false };
+
+  const window = Math.min(limit * PLATE_SUGGEST_WINDOW_FACTOR, PLATE_SUGGEST_MAX_WINDOW);
+  const rows = await repos.vehicle.suggestByPlate(keyword, window);
+  const ranked = rankPlateCandidates(rows, keyword);
+
+  return {
+    items: ranked.slice(0, limit).map((row) => ({
+      id: row.id,
+      plateNumber: row.plateNumber,
+      brand: row.brand,
+      model: row.model,
+      vinLast4: row.vin ? row.vin.slice(-4) : null,
+      customerName: row.customerName,
+      lastVisitAt: row.lastVisitAt ? row.lastVisitAt.toISOString() : null,
+      workOrderCount: row.workOrderCount,
+    })),
+    hasMore: ranked.length > limit,
   };
 }
 

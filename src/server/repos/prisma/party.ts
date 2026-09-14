@@ -1,6 +1,8 @@
 import type { Prisma } from "@prisma/client";
 
 import type { CustomerRepository, VehicleRepository } from "@/domain/repositories";
+import type { VehicleSuggestionRow } from "@/domain/rows";
+import { plateMatchKeyword } from "@/lib/plate";
 import { customerListSelect, vehicleListSelect } from "@/server/selects";
 
 import type { RepoClient } from "./client";
@@ -318,18 +320,48 @@ export function createVehicleRepository(client: RepoClient): VehicleRepository {
     },
 
     async suggestByPlate(keyword, limit) {
+      // 通配符在 SQLite 侧用 ESCAPE 处理、Prisma 侧无法附加 ESCAPE 子句，
+      // 所以两边统一先用 plateMatchKeyword 摘掉通配符（ADR-017）。
+      // 注意不能在这里"空关键字直接返回空"：SQLite 侧空关键字是
+      // 「匹配全部、只受 limit 约束」，两边必须保持一致。
+      const safe = plateMatchKeyword(keyword);
+
       const rows = await client.vehicle.findMany({
         where: {
           deletedAt: null,
-          plateNumber: { contains: keyword.toUpperCase(), mode: "insensitive" },
+          plateNumber: { contains: safe, mode: "insensitive" },
         },
-        select: { id: true, plateNumber: true, customer: { select: { name: true } } },
+        select: {
+          id: true,
+          plateNumber: true,
+          brand: true,
+          model: true,
+          vin: true,
+          updatedAt: true,
+          customer: { select: { name: true } },
+          // 最近一次进厂 = 未删除工单里最新的 createdAt
+          workOrders: {
+            where: { deletedAt: null },
+            select: { createdAt: true },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+          _count: { select: { workOrders: { where: { deletedAt: null } } } },
+        },
+        orderBy: { updatedAt: "desc" },
         take: limit,
       });
-      return rows.map((v) => ({
+
+      return rows.map((v): VehicleSuggestionRow => ({
         id: v.id,
         plateNumber: v.plateNumber,
+        brand: v.brand,
+        model: v.model,
+        vin: v.vin,
         customerName: v.customer.name,
+        lastVisitAt: v.workOrders[0]?.createdAt ?? null,
+        workOrderCount: v._count.workOrders,
+        updatedAt: v.updatedAt,
       }));
     },
 

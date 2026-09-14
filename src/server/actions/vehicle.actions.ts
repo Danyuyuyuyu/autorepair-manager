@@ -10,6 +10,7 @@ import {
   createVehicle,
   deleteVehicle,
   findVehicleByPlate,
+  suggestVehiclesByPlate,
   updateVehicle,
 } from "@/server/services/vehicle.service";
 import { parseOrThrow } from "@/server/validate";
@@ -23,6 +24,20 @@ export async function lookupVehicleByPlateAction(
   return safeAction(async () => {
     await requireUserAction();
     return findVehicleByPlate(plate);
+  });
+}
+
+/**
+ * 输入部分车牌时的候选车辆（新建工单的联想，ADR-017）。
+ * 与 lookupVehicleByPlateAction 的区别：后者是**精确匹配**，命中即锁定车辆；
+ * 本动作只做「片段联想」，返回的是候选列表，不建立任何车辆绑定。
+ */
+export async function suggestVehiclesByPlateAction(
+  plate: string,
+): Promise<ActionResult<Awaited<ReturnType<typeof suggestVehiclesByPlate>>>> {
+  return safeAction(async () => {
+    await requireUserAction();
+    return suggestVehiclesByPlate(plate);
   });
 }
 

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Car, Pencil, Plus, Search, Trash2, UserRound } from "lucide-react";
+import { Car, Pencil, Plus, Trash2, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { ITEM_TYPE_LABELS } from "@/lib/constants";
 import { calcOrderTotals, money } from "@/lib/money";
+import { isPlausiblePlate, normalizePlate } from "@/lib/plate";
 import { formatMoney, formatQuantity } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { createWorkOrderAction } from "@/server/actions/work-order.actions";
@@ -24,6 +25,7 @@ import {
   type DraftItem,
   type ServiceItemOption,
 } from "@/features/work-orders/components/item-editor-sheet";
+import { VehiclePlateSuggest } from "@/features/work-orders/components/vehicle-plate-suggest";
 import type { VehicleLookupResult } from "@/features/work-orders/types";
 
 const TYPE_ORDER: DraftItem["type"][] = ["SERVICE", "PART", "LABOR", "OTHER"];
@@ -46,7 +48,8 @@ export function CreateWorkOrderForm({
   const [plate, setPlate] = React.useState("");
   const [searching, setSearching] = React.useState(false);
   const [vehicle, setVehicle] = React.useState<VehicleLookupResult | null>(null);
-  const [notFound, setNotFound] = React.useState(false);
+  /** 建档面板是否展开：只有用户显式点「新建车辆」后才为 true（ADR-017） */
+  const [createNewOpen, setCreateNewOpen] = React.useState(false);
 
   // ---- 新客户（未找到车辆时）----
   const [customerName, setCustomerName] = React.useState("");
@@ -82,8 +85,9 @@ export function CreateWorkOrderForm({
     [items, discount],
   );
 
-  const handleSearch = async () => {
-    const normalized = plate.trim().toUpperCase();
+  /** 精确查询：命中即锁定车辆并带出里程与历史维修 */
+  const handleSearch = async (rawPlate?: string) => {
+    const normalized = normalizePlate(rawPlate ?? plate);
     if (!normalized) {
       toast.error("请先输入车牌号。");
       return;
@@ -100,18 +104,24 @@ export function CreateWorkOrderForm({
 
     if (result.data) {
       setVehicle(result.data);
-      setNotFound(false);
+      setCreateNewOpen(false);
       setMileage(result.data.currentMileage ? String(result.data.currentMileage) : "");
     } else {
+      // 不自动展开建档面板：下方会出现「新建车辆」入口，由用户显式点击（ADR-017）
       setVehicle(null);
-      setNotFound(true);
-      toast.info("未找到该车牌，请补充客户信息后继续。");
+      toast.info(`未找到「${normalized}」的车牌记录，可点「新建车辆」建档。`);
     }
+  };
+
+  /** 点候选项：用完整车牌走一次精确查询后锁定 */
+  const handlePick = (plateNumber: string) => {
+    setPlate(plateNumber);
+    void handleSearch(plateNumber);
   };
 
   const resetVehicle = () => {
     setVehicle(null);
-    setNotFound(false);
+    setCreateNewOpen(false);
     setCustomerName("");
     setCustomerPhone("");
     setVehicleBrand("");
@@ -119,8 +129,13 @@ export function CreateWorkOrderForm({
   };
 
   const handleSubmit = async () => {
-    if (!vehicle && !plate.trim()) {
-      toast.error("请填写车牌号。");
+    // 未确认车辆不许保存：这是「防重复建档」的硬闸门（ADR-017）
+    if (!vehicle && !createNewOpen) {
+      toast.error("请先选择已有车辆，或按当前车牌新建车辆。");
+      return;
+    }
+    if (!vehicle && !isPlausiblePlate(plate)) {
+      toast.error("车牌号格式不正确，请检查（例如：粤A12345）。");
       return;
     }
     if (!vehicle && (!customerName.trim() || !customerPhone.trim())) {
@@ -134,7 +149,7 @@ export function CreateWorkOrderForm({
       vehicleId: vehicle?.id,
       newCustomerName: vehicle ? undefined : customerName.trim(),
       newCustomerPhone: vehicle ? undefined : customerPhone.trim(),
-      newVehiclePlate: vehicle ? undefined : plate.trim().toUpperCase(),
+      newVehiclePlate: vehicle ? undefined : normalizePlate(plate),
       newVehicleBrand: vehicle ? undefined : vehicleBrand.trim() || undefined,
       newVehicleModel: vehicle ? undefined : vehicleModel.trim() || undefined,
       mileage: mileage ? Number(mileage) : undefined,
@@ -209,37 +224,24 @@ export function CreateWorkOrderForm({
             </div>
           ) : (
             <>
-              <Field label="车牌号" required hint="输入后点击查询，可自动带出客户与历史维修记录">
-                <div className="flex gap-2">
-                  <Input
-                    value={plate}
-                    onChange={(e) => setPlate(e.target.value.toUpperCase())}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void handleSearch();
-                      }
-                    }}
-                    placeholder="例如：粤A12345"
-                    autoCapitalize="characters"
-                    enterKeyHint="search"
-                    className="tracking-wide"
-                  />
-                  <Button
-                    onClick={() => void handleSearch()}
-                    loading={searching}
-                    className="shrink-0"
-                  >
-                    {!searching ? <Search /> : null}
-                    查询
-                  </Button>
-                </div>
-              </Field>
+              <VehiclePlateSuggest
+                value={plate}
+                onValueChange={(next) => {
+                  setPlate(next);
+                  // 建档面板绑定的是「点下新建那一刻的车牌」，改了车牌就要重新确认
+                  if (createNewOpen) setCreateNewOpen(false);
+                }}
+                onSearch={() => void handleSearch()}
+                searching={searching}
+                onPick={handlePick}
+                onConfirmCreateNew={() => setCreateNewOpen(true)}
+                createNewOpen={createNewOpen}
+              />
 
-              {notFound ? (
+              {createNewOpen ? (
                 <div className="rounded-control border-warning-border bg-warning-soft space-y-3 border p-3.5">
                   <p className="text-warning-strong text-xs font-medium">
-                    未找到该车牌，补充以下信息即可建档
+                    按「{plate}」新建车辆，补充以下信息即可建档
                   </p>
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="客户姓名" required>
@@ -459,13 +461,16 @@ export function CreateWorkOrderForm({
       <div className="border-border bg-card/95 lg:rounded-card lg:shadow-card fixed inset-x-0 bottom-0 z-40 border-t px-4 py-3 backdrop-blur-md lg:static lg:border">
         <div className="mx-auto flex max-w-6xl items-center gap-4">
           <div className="min-w-0 flex-1">
-            <p className="text-muted-foreground text-xs">应收金额</p>
+            <p className="text-muted-foreground text-xs">
+              {!vehicle && !createNewOpen ? "请先选择车辆或新建车辆" : "应收金额"}
+            </p>
             <p className="tabular text-foreground truncate text-2xl leading-tight font-semibold">
               {formatMoney(totals.totalAmount)}
             </p>
           </div>
           <Button
             size="lg"
+            disabled={!vehicle && !createNewOpen}
             loading={submitting}
             onClick={() => void handleSubmit()}
             className="shrink-0 px-8"

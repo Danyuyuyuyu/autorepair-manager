@@ -10,6 +10,7 @@ import type {
   VehicleSuggestionRow,
   SearchVehicleRow,
 } from "@/domain/rows";
+import { escapeLikePattern, plateMatchKeyword } from "@/lib/plate";
 import { NotFoundError } from "@/server/errors";
 
 import { newId } from "./id";
@@ -245,19 +246,34 @@ export function createSqliteVehicleRepository(db: DatabaseSync): VehicleReposito
     },
 
     async suggestByPlate(keyword, limit) {
+      // LIKE 通配符必须转义（配合 ESCAPE '\'）：
+      // 不转义的话用户在车牌框里打一个 % 就会命中全库。
       return rows(
         db,
-        `SELECT v.id, v.plate_number, c.name AS customer_name
-         FROM vehicles v JOIN customers c ON c.id = v.customer_id
+        `SELECT v.id, v.plate_number, v.brand, v.model, v.vin, v.updated_at,
+                c.name AS customer_name,
+                (SELECT MAX(w.created_at) FROM work_orders w
+                  WHERE w.vehicle_id = v.id AND w.deleted_at IS NULL) AS last_visit_at,
+                (SELECT COUNT(*) FROM work_orders w
+                  WHERE w.vehicle_id = v.id AND w.deleted_at IS NULL) AS work_order_count
+         FROM vehicles v
+         JOIN customers c ON c.id = v.customer_id
          WHERE v.deleted_at IS NULL
-           AND LOWER(v.plate_number) LIKE LOWER('%' || ? || '%')
+           AND UPPER(v.plate_number) LIKE UPPER('%' || ? || '%') ESCAPE '\\'
+         ORDER BY v.updated_at DESC
          LIMIT ?`,
-        keyword.toUpperCase(),
+        escapeLikePattern(plateMatchKeyword(keyword)),
         limit,
       ).map((row): VehicleSuggestionRow => ({
         id: String(row.id),
         plateNumber: String(row.plate_number),
+        brand: text(row.brand),
+        model: text(row.model),
+        vin: text(row.vin),
         customerName: String(row.customer_name),
+        lastVisitAt: date(row.last_visit_at),
+        workOrderCount: Number(row.work_order_count ?? 0),
+        updatedAt: requiredDate(row.updated_at),
       }));
     },
 

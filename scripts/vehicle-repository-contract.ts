@@ -362,6 +362,48 @@ async function runContract(harness: ContractHarness, prefix: string): Promise<Ve
         suggestions[0]?.plateNumber === "粤V10001" &&
         suggestions[0]?.customerName === "车辆契约甲",
     );
+    check(
+      `${harness.name} 车牌 suggest 返回候选展示字段（车型/VIN/更新时间）`,
+      suggestions[0]?.brand === "Toyota Updated" &&
+        suggestions[0]?.model === "Corolla X" &&
+        suggestions[0]?.vin === "VIN-UPDATED" &&
+        suggestions[0]?.updatedAt.toISOString() === dates.fifth.toISOString(),
+      `${suggestions[0]?.brand}/${suggestions[0]?.model}/${suggestions[0]?.updatedAt.toISOString()}`,
+    );
+    check(
+      `${harness.name} 车牌 suggest 最近进厂只算未删除工单`,
+      suggestions[0]?.workOrderCount === 1 &&
+        suggestions[0]?.lastVisitAt?.toISOString() === dates.first.toISOString(),
+      `count=${suggestions[0]?.workOrderCount} lastVisit=${suggestions[0]?.lastVisitAt?.toISOString()}`,
+    );
+    const suggestWindow = await harness.vehicle.suggestByPlate("粤V", 20);
+    check(
+      `${harness.name} 车牌 suggest 窗口按 updatedAt 倒序（前缀优先由业务层负责）`,
+      suggestWindow.map((row) => row.plateNumber).join(",") === "粤V10001,粤V20001" &&
+        suggestWindow[1]?.updatedAt.toISOString() === dates.third.toISOString(),
+      suggestWindow.map((row) => row.plateNumber).join(","),
+    );
+    const suggestNoOrders = await harness.vehicle.suggestByPlate("粤V20001", 20);
+    check(
+      `${harness.name} 车牌 suggest 无工单车辆 lastVisitAt 为 null`,
+      suggestNoOrders.length === 1 &&
+        suggestNoOrders[0]?.lastVisitAt === null &&
+        suggestNoOrders[0]?.workOrderCount === 0,
+      `lastVisit=${suggestNoOrders[0]?.lastVisitAt} count=${suggestNoOrders[0]?.workOrderCount}`,
+    );
+    const suggestWildcard = await harness.vehicle.suggestByPlate("%_%", 20);
+    const suggestAll = await harness.vehicle.suggestByPlate("", 20);
+    check(
+      `${harness.name} 车牌 suggest 纯通配符与空关键字等价（通配符被摘除）`,
+      suggestWildcard.length === suggestAll.length && suggestAll.length > 0,
+      `通配符 ${suggestWildcard.length} 条 / 空关键字 ${suggestAll.length} 条`,
+    );
+    const suggestInjection = await harness.vehicle.suggestByPlate("%' OR 1=1 --", 20);
+    check(
+      `${harness.name} 车牌 suggest 注入式关键字命中 0 条`,
+      suggestInjection.length === 0,
+      `命中 ${suggestInjection.length} 条`,
+    );
     const suggestEmpty = await harness.vehicle.suggestByPlate("", 2);
     check(`${harness.name} suggest 空查询尊重 limit`, suggestEmpty.length === 2);
 

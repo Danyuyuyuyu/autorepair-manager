@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isPlausiblePlate, normalizePlate } from "@/lib/plate";
 import {
   idField,
   intField,
@@ -25,6 +26,23 @@ export const workOrderItemSchema = z.object({
   remark: optionalText(200),
 });
 
+/**
+ * 新建车辆的车牌输入（ADR-017）。
+ *
+ * 归一化与查询/匹配共用 `normalizePlate`，并在这里做**格式闸门**：
+ * 拦住「车牌输了一半就建档」（例如 `粤A1`）这类脏数据。
+ *
+ * 注意分工：查询与联想**不校验格式**（联想必须允许半截输入），
+ * 只有真正要建一辆新车时才校验，且校验发生在 Server Action 边界 ——
+ * 绕过 UI 直接调 action 也拦得住。
+ */
+const vehiclePlateInput = z
+  .string()
+  .trim()
+  .transform((v) => (v ? normalizePlate(v) : undefined))
+  .refine((v) => v === undefined || isPlausiblePlate(v), "车牌号格式不正确（例如：粤A12345）")
+  .optional();
+
 /** 创建工单（支持「客户 / 车辆」二选一：已有客户 或 现场新建） */
 export const createWorkOrderSchema = z.object({
   customerId: z.string().trim().optional(),
@@ -33,20 +51,12 @@ export const createWorkOrderSchema = z.object({
   // 现场快速建档
   newCustomerName: optionalText(32),
   newCustomerPhone: optionalText(20),
-  newVehiclePlate: z
-    .string()
-    .trim()
-    .optional()
-    .transform((v) => (v ? v.toUpperCase().replace(/\s+/g, "") : undefined)),
+  newVehiclePlate: vehiclePlateInput,
   newVehicleBrand: optionalText(32),
   newVehicleModel: optionalText(64),
   newVehicleMileage: optionalIntField({ min: 0, max: 2_000_000 }),
 
-  plateNumber: z
-    .string()
-    .trim()
-    .optional()
-    .transform((v) => (v ? v.toUpperCase().replace(/\s+/g, "") : undefined)),
+  plateNumber: vehiclePlateInput,
 
   mileage: optionalIntField({ min: 0, max: 2_000_000 }),
   faultDescription: optionalText(1000),

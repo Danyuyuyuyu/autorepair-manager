@@ -555,7 +555,12 @@ export interface VehicleRepository {
   /** 全局搜索：车牌 / VIN / 品牌 / 型号 模糊匹配 */
   searchForGlobal(keyword: string, limit: number): Promise<SearchVehicleRow[]>;
 
-  /** 联想建议：仅按车牌匹配 */
+  /**
+   * 联想建议：仅按车牌片段模糊匹配（大小写不敏感、过滤软删车辆）。
+   *
+   * `limit` 是「取数窗口」而不是最终条数：仓储只保证按 `updatedAt` 倒序取窗口，
+   * 「前缀命中优先」这类表达由业务层用纯函数完成（见 `VehicleSuggestionRow`）。
+   */
   suggestByPlate(keyword: string, limit: number): Promise<VehicleSuggestionRow[]>;
 }
 
