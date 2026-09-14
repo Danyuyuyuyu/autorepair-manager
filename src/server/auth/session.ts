@@ -18,6 +18,18 @@ function ttlMs() {
   return getEnv().SESSION_TTL_DAYS * 24 * 60 * 60 * 1000;
 }
 
+/**
+ * 会话 Cookie 是否只在 HTTPS 下发（Secure）。
+ * ---------------------------------------------------------------------------
+ * 生产环境默认开启。局域网内用手机 / 平板通过明文 HTTP 访问
+ * （http://192.168.x.x:3000）时，浏览器会**拒收** Secure Cookie ——
+ * 表现为「输入账号密码后又被弹回登录页」。这类内网明文场景可显式设
+ * `AUTH_COOKIE_SECURE="false"`；公网 / HTTPS 反代部署请保持默认（或设 "true"）。
+ */
+function isSecureCookieRequired(): boolean {
+  return process.env.NODE_ENV === "production" && process.env.AUTH_COOKIE_SECURE !== "false";
+}
+
 /** 创建会话并把原始 token 写入 httpOnly Cookie（数据库中只存哈希） */
 export async function createSession(userId: string): Promise<void> {
   const token = randomBytes(32).toString("base64url");
@@ -36,7 +48,7 @@ export async function createSession(userId: string): Promise<void> {
   cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: isSecureCookieRequired(),
     path: "/",
     expires: expiresAt,
   });

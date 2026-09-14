@@ -1,0 +1,15 @@
+fix(auth): 局域网明文访问时可关闭 Secure Cookie（AUTH_COOKIE_SECURE）
+
+生产模式默认仍只在 HTTPS 下发会话 Cookie；但手机 / 平板在局域网通过
+http://<内网IP>:3000 访问时，浏览器会拒收 Secure Cookie，表现为
+「账号密码正确却立刻被弹回登录页」。
+
+- src/server/auth/session.ts：新增 AUTH_COOKIE_SECURE="false" 显式开关
+  （默认行为不变，仅当取值恰为 "false" 时才关闭 Secure）
+- .env.example：加入该变量与说明
+- README：新增「手机 / 平板在局域网访问」小节（内网 IP 查法、Windows
+  防火墙规则、Secure 开关、以及无 HTTPS 时 PWA 不可用的已知限制）
+
+实测：AUTH_COOKIE_SECURE="false" 时经 http://192.168.2.14:3000 登录
+→ 303 /dashboard、Set-Cookie 无 Secure、带 Cookie 访问 /dashboard 200；
+默认（或 "true"）仍下发 Secure。typecheck / lint / format / build 均通过。

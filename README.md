@@ -441,3 +441,28 @@ pnpm backup daily                   # 当天还没有备份时才创建（计划
   SQLite Online Backup API 产出单一、一致、可恢复的文件；创建后立即校验，不通过就丢弃。
 - 服务启动时（`APP_STORAGE=sqlite`）会自动做一次「每日备份」，同一进程/同一天只做一次。
 - `restore` 需要先停止服务（Windows 下文件被占用会明确报错，而不是产生半恢复的库）。
+
+### 手机 / 平板在局域网访问
+
+1. 服务默认监听 `0.0.0.0`，不用改配置；只要手机和电脑连在同一个 Wi-Fi / 局域网。
+2. 查电脑的内网 IP：`ipconfig`，找到「以太网」或「WLAN」下的 IPv4（本机是 `192.168.2.14`）。
+3. 手机浏览器打开 `http://<内网IP>:3000`，例如 `http://192.168.2.14:3000`。
+4. **必须关掉 Secure Cookie**，否则登录后会立刻被弹回登录页（原因见下）。
+
+生产模式（`pnpm start`）默认只在 HTTPS 下发会话 Cookie。手机用明文 HTTP 访问时浏览器会
+**拒收**这个 Cookie，表现得像「密码明明对，却又回到登录页」。让内网明文访问可用：
+
+    # .env.local（机器本地、不会被提交）
+    AUTH_COOKIE_SECURE="false"
+
+改完配置后重新 `pnpm build` 并重启服务。以后若改成 HTTPS 访问（证书 + 反代），
+请把这一行删掉或改回 `"true"`。
+
+Windows 防火墙：`node.exe` 的入站规则通常已允许（本机实测 Private / Public 均已放行）；
+若手机仍打不开，用**管理员** PowerShell 补一条：
+
+    New-NetFirewallRule -DisplayName "汽修管家 3000" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Private
+
+**已知限制**：没有 HTTPS 时 `http://192.168.x.x` 不是安全上下文，浏览器**不会注册 Service Worker**，
+因此 PWA 的「添加到主屏幕 / 离线页」不可用。想在手机上像 App 一样用桌面图标，
+需要给内网配证书走 HTTPS（例如 Caddy + 内部 CA）。
