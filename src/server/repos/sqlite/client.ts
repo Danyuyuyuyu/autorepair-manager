@@ -1,7 +1,8 @@
-import { mkdirSync } from "node:fs";
+import { accessSync, constants, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { ensureFirstRunBootstrap, type BootstrapResult } from "@/server/bootstrap/first-run";
 import { migrate } from "./migration";
 
 /**
@@ -38,32 +39,79 @@ export function resolveDbPath(): string {
 }
 
 let cached: DatabaseSync | null = null;
+let bootstrapResult: BootstrapResult | null = null;
 
 /** 获取（必要时创建并迁移）应用数据库连接 */
 export function getSqliteDb(): DatabaseSync {
   if (cached) return cached;
 
   const file = resolveDbPath();
-  mkdirSync(dirname(file), { recursive: true });
+  const directory = dirname(file);
+  try {
+    mkdirSync(directory, { recursive: true });
+    accessSync(directory, constants.W_OK);
+  } catch (error) {
+    throw new Error(
+      `首次初始化失败：数据库目录不可写或无法创建（${directory}）。${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 
-  const db = new DatabaseSync(file);
+  let db: DatabaseSync;
+  try {
+    db = new DatabaseSync(file);
+  } catch (error) {
+    throw new Error(
+      `首次初始化失败：无法创建或打开 SQLite 数据库（${file}）。请确认数据库目录可写。${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 
-  db.exec("PRAGMA journal_mode = WAL;");
-  db.exec("PRAGMA synchronous = NORMAL;");
-  // 外键必须显式开启 —— SQLite 默认 OFF，等于外键约束全部失效
-  db.exec("PRAGMA foreign_keys = ON;");
-  db.exec("PRAGMA busy_timeout = 5000;");
+  try {
+    db.exec("PRAGMA journal_mode = WAL;");
+    db.exec("PRAGMA synchronous = NORMAL;");
+    // 外键必须显式开启 —— SQLite 默认 OFF，等于外键约束全部失效
+    db.exec("PRAGMA foreign_keys = ON;");
+    db.exec("PRAGMA busy_timeout = 5000;");
 
-  migrate(db);
+    migrate(db);
+  } catch (error) {
+    db.close();
+    throw new Error(
+      `首次初始化失败：数据库结构迁移未完成。${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 
   cached = db;
   return db;
+}
+
+/**
+ * 应用启动入口：结构 migration 完成后，再执行正式 First Run bootstrap。
+ * 低层 migration / repository contracts 继续使用 getSqliteDb()，不会夹带正式初始化数据。
+ */
+export function getInitializedSqliteDb(): DatabaseSync {
+  return initializeSqliteStorage().database;
+}
+
+/** 完整应用启动结果；instrumentation 用 outcome 避免为空白新库立即创建每日备份。 */
+export function initializeSqliteStorage(): {
+  database: DatabaseSync;
+  bootstrap: BootstrapResult;
+} {
+  const db = getSqliteDb();
+  try {
+    bootstrapResult ??= ensureFirstRunBootstrap(db);
+    return { database: db, bootstrap: bootstrapResult };
+  } catch (error) {
+    closeSqliteDb();
+    throw error;
+  }
 }
 
 /** 关闭当前连接（测试 / 备份前调用；备份也可以直接复制文件，WAL 下安全） */
 export function closeSqliteDb(): void {
   cached?.close();
   cached = null;
+  bootstrapResult = null;
 }
 
 /** 仅供测试：不落盘的内存库（跑 migrations 后可直接用） */

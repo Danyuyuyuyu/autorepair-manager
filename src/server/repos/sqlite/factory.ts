@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { Repositories } from "@/domain/repositories";
-import { getSqliteDb } from "./client";
+import { createMemoryDb, getInitializedSqliteDb } from "./client";
 import { createSqliteCustomerRepository } from "./customer";
 import { createSqliteCatalogRepository } from "./catalog";
 import { createSqliteAuditRepository } from "./audit";
@@ -100,5 +100,13 @@ export function placeholderCount(): number {
 
 /** 供 context 初始化 SQLite（触发 PRAGMA + migration，保证先于任何仓储查询） */
 export function initSqliteDb(): DatabaseSync {
-  return getSqliteDb();
+  // `next build` 的静态分析 worker 会加载页面依赖，但不属于应用启动。
+  // 给它一次性的内存 schema，避免构建并发触碰真实 SQLite 文件或要求 bootstrap 凭据。
+  if (
+    process.env.NEXT_PHASE === "phase-production-build" ||
+    process.env.NEXT_PRIVATE_BUILD_WORKER === "1"
+  ) {
+    return createMemoryDb();
+  }
+  return getInitializedSqliteDb();
 }

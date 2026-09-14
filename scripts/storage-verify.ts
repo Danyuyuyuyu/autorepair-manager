@@ -121,6 +121,9 @@ function main() {
   const sqliteRun = spawnProbe("sqlite", {
     APP_STORAGE: "sqlite",
     AUTOREPAIR_DB_PATH: join(tempDir, "autorepair.db"),
+    BOOTSTRAP_ADMIN_USERNAME: "storage-admin",
+    BOOTSTRAP_ADMIN_PASSWORD: "StorageVerify123456",
+    BOOTSTRAP_ADMIN_NAME: "存储探针管理员",
   });
   check(
     "进程正常退出",

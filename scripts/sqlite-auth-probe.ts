@@ -4,10 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { money } from "@/lib/money";
+import { closeSqliteDb } from "@/server/repos/sqlite/client";
 
 async function main(): Promise<void> {
   assert.equal(process.env.APP_STORAGE, "sqlite", "探针必须在 APP_STORAGE=sqlite 下运行");
   process.env.DATABASE_URL = "postgresql://127.0.0.1:1/unavailable";
+  process.env.BOOTSTRAP_ADMIN_USERNAME ??= "admin";
+  process.env.BOOTSTRAP_ADMIN_PASSWORD ??= "admin123456";
+  process.env.BOOTSTRAP_ADMIN_NAME ??= "店长";
+  const probeUsername = process.env.SQLITE_AUTH_PROBE_USERNAME ?? "admin";
+  const probePassword = process.env.SQLITE_AUTH_PROBE_PASSWORD ?? "admin123456";
   const tempDir = process.env.AUTOREPAIR_DB_PATH
     ? null
     : mkdtempSync(join(tmpdir(), "autorepair-sqlite-auth-"));
@@ -28,23 +34,23 @@ async function main(): Promise<void> {
       ]);
 
     assert.equal(context.storage.kind, "sqlite");
-    let login = await context.repos.user.findForLogin("admin");
+    let login = await context.repos.user.findForLogin(probeUsername);
     if (!login) {
       const created = await context.repos.user.create({
-        username: "admin",
+        username: probeUsername,
         name: "店长",
         phone: null,
-        passwordHash: await password.hashPassword("admin123456"),
+        passwordHash: await password.hashPassword(probePassword),
         role: "ADMIN",
       });
       login = await context.repos.user.findForLogin(created.username);
     }
     assert.ok(login);
-    assert.equal(await password.verifyPassword("admin123456", login.passwordHash), true);
+    assert.equal(await password.verifyPassword(probePassword, login.passwordHash), true);
 
     const admin = {
       id: login.id,
-      username: "admin",
+      username: probeUsername,
       name: login.name,
       role: login.role,
       isAdmin: login.role === "ADMIN",
@@ -170,7 +176,7 @@ async function main(): Promise<void> {
       JSON.stringify(
         {
           dbPath,
-          username: "admin",
+          username: probeUsername,
           customer: createdCustomer.name,
           vehicle: createdVehicle.plateNumber,
           orderNo: createdOrder.orderNo,
@@ -188,6 +194,7 @@ async function main(): Promise<void> {
   } finally {
     if (tempDir) {
       try {
+        closeSqliteDb();
         rmSync(tempDir, { recursive: true, force: true });
       } catch {
         console.warn(`（临时目录稍后可手动删除：${tempDir}）`);

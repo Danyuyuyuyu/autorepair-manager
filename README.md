@@ -399,16 +399,44 @@ docker compose exec app node node_modules/prisma/build/index.js db seed
 
 同一套业务逻辑可以跑在 PostgreSQL 或 SQLite 上（ADR-014），由 `APP_STORAGE` 决定：
 
-| 环境变量                      | 默认值                                                | 说明                                     |
-| ----------------------------- | ----------------------------------------------------- | ---------------------------------------- |
-| `APP_STORAGE`                 | 未设置 = `postgres`                                   | `sqlite` 时使用 node:sqlite 单文件数据库 |
-| `AUTOREPAIR_DB_PATH`          | `%LOCALAPPDATA%\AutoRepairManager\data\autorepair.db` | SQLite 数据文件                          |
-| `AUTOREPAIR_BACKUP_DIR`       | `%LOCALAPPDATA%\AutoRepairManager\backups`            | 备份目录                                 |
-| `AUTOREPAIR_BACKUP_RETENTION` | `30`                                                  | 保留最近 N 份备份                        |
+| 环境变量                      | 默认值                                                | 说明                                      |
+| ----------------------------- | ----------------------------------------------------- | ----------------------------------------- |
+| `APP_STORAGE`                 | 未设置 = `postgres`                                   | `sqlite` 时使用 node:sqlite 单文件数据库  |
+| `AUTOREPAIR_DB_PATH`          | `%LOCALAPPDATA%\AutoRepairManager\data\autorepair.db` | SQLite 数据文件                           |
+| `AUTOREPAIR_BACKUP_DIR`       | `%LOCALAPPDATA%\AutoRepairManager\backups`            | 备份目录                                  |
+| `AUTOREPAIR_BACKUP_RETENTION` | `30`                                                  | 保留最近 N 份备份                         |
+| `BOOTSTRAP_ADMIN_USERNAME`    | 无                                                    | 真正空库首次启动时创建的管理员账号        |
+| `BOOTSTRAP_ADMIN_PASSWORD`    | 无                                                    | 首次管理员密码（至少 8 位，含字母和数字） |
+| `BOOTSTRAP_ADMIN_NAME`        | `店长`                                                | 首次管理员显示名称                        |
 
 ```bash
 $env:APP_STORAGE="sqlite"; pnpm start        # Windows PowerShell
 APP_STORAGE=sqlite pnpm start                # macOS / Linux
+```
+
+### SQLite 正式首次运行
+
+正式首次运行不使用 `pnpm db:seed`。后者是 PostgreSQL 开发/demo fixture，会写入员工、目录、
+配件与示例业务；SQLite bootstrap 只创建一个管理员和一个完成标记。
+
+```powershell
+$env:APP_STORAGE="sqlite"
+$env:BOOTSTRAP_ADMIN_USERNAME="your-admin"
+$env:BOOTSTRAP_ADMIN_PASSWORD="使用你自己的强密码"
+pnpm start
+```
+
+- 数据库目录不存在时会按 `AUTOREPAIR_DB_PATH` 原位创建，不会 fallback 到别处。
+- 只有 schema 完整、所有业务表为空且没有任何用户时才会自动创建管理员。
+- 已初始化库再次启动不会读取 bootstrap 凭据来覆盖账号或密码。
+- 已有数据却没有启用管理员时会拒绝启动，避免自动“修复”破坏真实数据。
+- 管理员与 `system.bootstrap.completed` marker 在同一事务写入，失败会一起回滚。
+
+独立验收命令（只使用带路径守卫的系统临时目录，并把 PostgreSQL 指向不可达地址）：
+
+```bash
+pnpm fresh-install:verify
+pnpm build && pnpm e2e:fresh-install    # 真实生产进程 + 本机 Edge 登录
 ```
 
 ### 从 PostgreSQL 迁移
@@ -439,7 +467,8 @@ pnpm backup daily                   # 当天还没有备份时才创建（计划
 
 - 备份**不是简单复制文件**：WAL 模式下单独复制 `autorepair.db` 会丢最近提交。这里用
   SQLite Online Backup API 产出单一、一致、可恢复的文件；创建后立即校验，不通过就丢弃。
-- 服务启动时（`APP_STORAGE=sqlite`）会自动做一次「每日备份」，同一进程/同一天只做一次。
+- 首次空白库初始化不创建空备份；后续启动（`APP_STORAGE=sqlite`）照常自动做一次「每日备份」，
+  同一天只做一次。
 - `restore` 需要先停止服务（Windows 下文件被占用会明确报错，而不是产生半恢复的库）。
 
 ### 手机 / 平板在局域网访问

@@ -13,7 +13,7 @@ import {
   resolveBackupRetention,
   type BackupService,
 } from "@/server/backup/backup-service";
-import { closeSqliteDb, getSqliteDb, resolveDbPath } from "@/server/repos/sqlite/client";
+import { closeSqliteDb, getInitializedSqliteDb, resolveDbPath } from "@/server/repos/sqlite/client";
 
 export function createAppBackupService(): BackupService {
   return createBackupService({
@@ -22,8 +22,8 @@ export function createAppBackupService(): BackupService {
     retention: resolveBackupRetention(),
     closeDatabase: () => closeSqliteDb(),
     reopenDatabase: () => {
-      // 打开即包含 migration：旧备份恢复到当前版本时 schema 会被推进
-      getSqliteDb();
+      // 打开包含 migration + 状态识别：旧备份推进后不会被误当成全新库覆盖
+      getInitializedSqliteDb();
     },
   });
 }

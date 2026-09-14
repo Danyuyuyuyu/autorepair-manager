@@ -4,11 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { hashPassword, verifyPassword } from "@/server/auth/password";
+import { closeSqliteDb } from "@/server/repos/sqlite/client";
 
 async function main(): Promise<void> {
   assert.equal(process.env.APP_STORAGE, "sqlite", "探针必须在 APP_STORAGE=sqlite 下运行");
   const tempDir = mkdtempSync(join(tmpdir(), "autorepair-user-login-"));
   process.env.AUTOREPAIR_DB_PATH = join(tempDir, "autorepair.db");
+  process.env.BOOTSTRAP_ADMIN_USERNAME = "bootstrap-root";
+  process.env.BOOTSTRAP_ADMIN_PASSWORD = "Bootstrap123456";
+  process.env.BOOTSTRAP_ADMIN_NAME = "初始化管理员";
 
   try {
     const { repos, storage } = await import("@/server/context");
@@ -35,6 +39,7 @@ async function main(): Promise<void> {
     console.log("SQLite credential probe：通过");
     console.log("APP_STORAGE=sqlite 下用户身份读取与 bcrypt 密码验证未访问 PostgreSQL");
   } finally {
+    closeSqliteDb();
     try {
       rmSync(tempDir, { recursive: true, force: true });
     } catch {

@@ -22,6 +22,9 @@ async function main(): Promise<void> {
   process.env.DATABASE_URL = "postgresql://127.0.0.1:1/unavailable";
   const tempDir = mkdtempSync(join(tmpdir(), "autorepair-sqlite-prune-"));
   process.env.AUTOREPAIR_DB_PATH = join(tempDir, "autorepair.db");
+  process.env.BOOTSTRAP_ADMIN_USERNAME = "bootstrap-root";
+  process.env.BOOTSTRAP_ADMIN_PASSWORD = "Bootstrap123456";
+  process.env.BOOTSTRAP_ADMIN_NAME = "初始化管理员";
 
   try {
     const [{ storage, repos, sessionStore }, prune] = await Promise.all([

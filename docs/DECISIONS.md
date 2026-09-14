@@ -376,3 +376,43 @@ UI 尚未提供入口（本阶段刻意不改 UI）。
 
 **验证**：`pnpm plate:contract`（纯函数 40 项）、`pnpm vehicle:contract`（两种存储 75 项，
 含 PostgreSQL/SQLite 语义快照一致）、`pnpm e2e:plate`（真实浏览器 19 项，**不点保存**、不写业务数据）。
+
+---
+
+## ADR-018 · Fresh Install 只在可证明为空时创建管理员，异常状态一律拒绝猜测
+
+**背景**：SQLite 单机版过去只会建 schema，正式管理员仍依赖开发 seed；而 seed 同时包含员工、
+目录、库存和演示业务，不能用于客户机器。单看 `autorepair.db` 是否存在也无法区分零字节文件、
+迁移中断、恢复库和已有真实数据。
+
+**决策**：
+
+1. 启动 seam 固定为「明确路径建目录 → SQLite PRAGMA → migration → FirstRunBootstrap」。
+   Migration 只管结构；Bootstrap 只管首个管理员与 `app_settings` 中的
+   `system.bootstrap.completed=1`；开发 seed / smoke fixture 继续独立。
+2. Bootstrap 的状态语义是：schema 或 marker 异常为 **BROKEN**；无 marker、无用户且所有业务表
+   都为空为 **UNINITIALIZED**；管理员与 marker 正在同一事务写入时为 **INITIALIZING**；
+   marker 可识别且至少有一名启用管理员为 **READY**。`INITIALIZING` 不持久化为中间 marker，
+   因为事务失败会同时回滚管理员和 marker。
+3. 真正空库必须提供并通过现有账号/密码规则的 `BOOTSTRAP_ADMIN_USERNAME` 与
+   `BOOTSTRAP_ADMIN_PASSWORD`；密码只写 bcrypt hash，日志不输出账号凭据或 hash。
+   初始化完成后不再读取这些变量，因此重启不会改名、改密码或新增管理员。
+4. 兼容 Stage 2 既有库与旧备份：无 marker 但已有启用管理员时，只补 marker，绝不修改账号与
+   业务数据。反之，只要存在用户或任一业务表有数据却没有启用管理员，就 fail-fast；管理员恢复
+   必须未来另做显式流程，不能借 bootstrap 猜测。
+5. 管理员与 marker 使用 `BEGIN IMMEDIATE` 单事务写入。Migration 仍按文件各自事务推进；所以
+   bootstrap 配置错误时可能留下一个**完整、可重试的 schema-only 数据库**，但不会留下半个管理员
+   或错误完成标记。
+6. 空白新库不立即创建每日备份；首次产生业务数据后，既有每日备份机制在后续启动时照常工作。
+   BackupService / Restore 语义不改，恢复后的 READY 库不会再次 bootstrap。
+
+**代价 / 遗留**：被停用/删除了全部管理员的既有库会拒绝启动，当前没有自动恢复入口；首次启动
+依赖部署者安全传入管理员凭据，尚无交互式首次设置 UI；Windows 实测拒绝写 ACL 时能 fail-fast，
+但安装器最终选择的数据目录及企业域策略组合仍需在打包阶段复验。
+
+**验证**：`pnpm fresh-install:verify` 使用受路径守卫保护的系统临时目录，在 PostgreSQL 明确不可达时
+覆盖空目录、零字节 DB、未完成 migration、schema-only、事务故障回滚、三次幂等启动、旧库认领、
+已有数据保护、异常 marker、不可用目录、登录会话、客户→车辆→工单→收款、Audit、Backup、Restore，
+当前为 82/82（Windows 下包含真实拒绝写 ACL）；正式 bootstrap 的初始行数只有 `users=1`、
+`app_settings=1`，其余业务表均为 0。`pnpm build && pnpm e2e:fresh-install` 另用真实生产进程与
+本机 Edge 验证首次进入登录页、登录 Action、Session 持久化及不创建空备份，当前为 11/11。

@@ -3,11 +3,16 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { closeSqliteDb } from "@/server/repos/sqlite/client";
+
 async function main(): Promise<void> {
   assert.equal(process.env.APP_STORAGE, "sqlite", "探针必须在 APP_STORAGE=sqlite 下运行");
   process.env.DATABASE_URL = "postgresql://127.0.0.1:1/unavailable";
   const tempDir = mkdtempSync(join(tmpdir(), "autorepair-audit-"));
   process.env.AUTOREPAIR_DB_PATH = join(tempDir, "autorepair.db");
+  process.env.BOOTSTRAP_ADMIN_USERNAME = "bootstrap-root";
+  process.env.BOOTSTRAP_ADMIN_PASSWORD = "Bootstrap123456";
+  process.env.BOOTSTRAP_ADMIN_NAME = "初始化管理员";
 
   try {
     const [{ repos, storage }, { writeAuditLog }] = await Promise.all([
@@ -42,6 +47,7 @@ async function main(): Promise<void> {
       "APP_STORAGE=sqlite 且 PostgreSQL 不可连接时，业务 Audit 写入与查询均未访问 PostgreSQL",
     );
   } finally {
+    closeSqliteDb();
     try {
       rmSync(tempDir, { recursive: true, force: true });
     } catch {
