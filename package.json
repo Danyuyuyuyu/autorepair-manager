@@ -41,6 +41,7 @@
     "backup": "node --conditions=react-server --import tsx scripts/backup.ts",
     "migrate:postgres-to-sqlite": "node --conditions=react-server --import tsx scripts/migrate-postgres-to-sqlite.ts",
     "backup:contract": "node --conditions=react-server --import tsx scripts/backup-contract.ts",
+    "animation:contract": "node --conditions=react-server --import tsx scripts/animation-contract.ts",
     "session:prune-contract": "node --conditions=react-server --import tsx scripts/session-prune-contract.ts",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",

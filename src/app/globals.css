@@ -196,3 +196,75 @@
     transform: translateY(0);
   }
 }
+
+/*
+ * 弹层动画 —— 这些 keyframes 不是"可选的美化"，而是**关闭逻辑的一部分**。
+ *
+ * Radix 的 Presence 在 data-state=closed 时会读取元素上的 animation-name，
+ * 若存在动画就等 animationend 才卸载内容。因此只要 class 里写了
+ * animate-[xxx_...]，就必须有对应的 @keyframes xxx；否则动画永不结束、
+ * animationend 永不触发，弹层/抽屉会「关不掉」——状态已是 closed，
+ * 元素却一直留在 DOM 里（✕、Esc、点遮罩全部表现为无反应）。
+ */
+@keyframes sheet-down {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-out-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-out-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
