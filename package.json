@@ -52,6 +52,7 @@
     "mobile:doctor": "node scripts/mobile-doctor.mjs",
     "mobile:android:build": "pnpm mobile:sync && pnpm --dir apps/mobile android:build",
     "mobile:sqlite:verify": "node scripts/mobile-sqlite-verify.mjs",
+    "mobile:customer:contract": "node scripts/mobile-customer-contract.mjs",
     "mobile:deps:verify": "node scripts/mobile-import-guard.mjs",
     "mobile:shell:verify": "node --import tsx scripts/e2e-mobile-shell.ts",
     "session:prune-contract": "node --conditions=react-server --import tsx scripts/session-prune-contract.ts",

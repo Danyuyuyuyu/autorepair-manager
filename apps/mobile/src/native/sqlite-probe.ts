@@ -1,11 +1,8 @@
-import {
-  CapacitorSQLite,
-  SQLiteConnection,
-  type SQLiteDBConnection,
-} from "@capacitor-community/sqlite";
+import { type SQLiteDBConnection, type SQLiteConnection } from "@capacitor-community/sqlite";
 import { Capacitor } from "@capacitor/core";
 
 import { isNativeMobile } from "../mobile/runtime";
+import { mobileSqlite } from "../data/native-sqlite";
 
 const PROBE_DATABASE = "autorepair-mobile-probe";
 const PROBE_VERSION = 1;
@@ -39,7 +36,7 @@ export async function runNativeSqliteProbe(): Promise<ProbeResult> {
     throw new Error("Native SQLite unavailable in browser development mode");
   }
 
-  const sqlite = new SQLiteConnection(CapacitorSQLite);
+  const sqlite = mobileSqlite;
   const steps: ProbeStep[] = [];
   const pass = (name: string, detail: string) => steps.push({ name, detail, passed: true });
   let db: SQLiteDBConnection | null = null;
@@ -167,7 +164,7 @@ export async function deleteNativeSqliteProbe(): Promise<void> {
   if (!isNativeMobile()) {
     throw new Error("Native SQLite unavailable in browser development mode");
   }
-  const sqlite = new SQLiteConnection(CapacitorSQLite);
+  const sqlite = mobileSqlite;
   const db = await connect(sqlite);
   await db.close();
   await db.delete();

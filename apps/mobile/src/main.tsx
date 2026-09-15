@@ -18,3 +18,13 @@ ReactDOM.createRoot(root).render(
     </MobileErrorBoundary>
   </React.StrictMode>,
 );
+
+if (import.meta.env.VITE_MOBILE_CUSTOMER_CONTRACT === "1") {
+  void import("./testing/customer-native-contract")
+    .then(({ runNativeCustomerContract }) => runNativeCustomerContract())
+    .catch((error: unknown) => {
+      console.error(
+        `[mobile:customer-contract] FAIL ${error instanceof Error ? error.stack : String(error)}`,
+      );
+    });
+}

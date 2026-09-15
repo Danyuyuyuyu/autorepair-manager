@@ -1,83 +1,29 @@
 import { ZodError } from "zod";
 
+import {
+  AppError,
+  BusinessRuleError,
+  ConcurrentModificationError,
+  ForbiddenError,
+  ForeignKeyConstraintError,
+  NotFoundError,
+  UnauthorizedError,
+  UniqueConstraintError,
+  ValidationError,
+} from "@/domain/errors";
 import type { ActionResult } from "@/types";
 
-/** 业务异常：message 会直接展示给用户，必须是中文可读文案 */
-export class AppError extends Error {
-  constructor(
-    message: string,
-    readonly code: string = "APP_ERROR",
-    readonly status: number = 400,
-  ) {
-    super(message);
-    this.name = "AppError";
-  }
-}
-
-export class UnauthorizedError extends AppError {
-  constructor(message = "登录已过期，请重新登录。") {
-    super(message, "UNAUTHORIZED", 401);
-  }
-}
-
-export class ForbiddenError extends AppError {
-  constructor(message = "没有权限执行该操作。") {
-    super(message, "FORBIDDEN", 403);
-  }
-}
-
-export class NotFoundError extends AppError {
-  constructor(message = "数据不存在或已被删除。") {
-    super(message, "NOT_FOUND", 404);
-  }
-}
-
-export class ValidationError extends AppError {
-  constructor(
-    message = "提交的数据不合法，请检查后重试。",
-    readonly fieldErrors?: Record<string, string[]>,
-  ) {
-    super(message, "VALIDATION_ERROR", 422);
-  }
-}
-
-/** 库存不足等可预期业务失败，单独标记便于前端友好提示 */
-export class BusinessRuleError extends AppError {
-  constructor(message: string) {
-    super(message, "BUSINESS_RULE", 409);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 存储层约束冲突 —— 后端无关
-// ---------------------------------------------------------------------------
-// 各仓储实现负责把底层驱动错误（Prisma P2002/P2003/P2025/P2034、
-// SQLite SQLITE_CONSTRAINT_* 等）翻译成下面这几个领域异常。
-// 这样业务层永远不需要 import 任何数据库驱动的错误类型，手机端才能复用。
-
-/** 唯一约束冲突（如工单号重复） */
-export class UniqueConstraintError extends AppError {
-  constructor(
-    message = "数据已存在，请勿重复提交。",
-    readonly field?: string,
-  ) {
-    super(message, "UNIQUE_VIOLATION", 409);
-  }
-}
-
-/** 外键约束冲突（记录被其他数据引用） */
-export class ForeignKeyConstraintError extends AppError {
-  constructor(message = "该记录已被其他数据引用，无法删除。") {
-    super(message, "FOREIGN_KEY_VIOLATION", 409);
-  }
-}
-
-/** 并发修改冲突（乐观锁失败 / 序列化冲突） */
-export class ConcurrentModificationError extends AppError {
-  constructor(message = "数据被同时修改，请重试。") {
-    super(message, "CONCURRENT_MODIFICATION", 409);
-  }
-}
+export {
+  AppError,
+  BusinessRuleError,
+  ConcurrentModificationError,
+  ForbiddenError,
+  ForeignKeyConstraintError,
+  NotFoundError,
+  UnauthorizedError,
+  UniqueConstraintError,
+  ValidationError,
+};
 
 /**
  * 把任意异常收敛成统一文案。

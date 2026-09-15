@@ -6,6 +6,7 @@ import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { isNativeMobile } from "./runtime";
+import { mobileDatabase } from "../data/mobile-database-context";
 import { runNativeSqliteProbeOnce } from "../native/sqlite-probe";
 
 type LifecycleState = "foreground" | "background";
@@ -76,6 +77,9 @@ export function MobileRuntimeProvider({ children }: React.PropsWithChildren) {
         }),
       );
 
+      // Capacitor SQLite 的原生连接表是进程级状态：先稳定正式库连接，
+      // 再运行隔离 probe，避免并发 consistency check 移除另一条连接。
+      await mobileDatabase.initialize();
       await runNativeSqliteProbeOnce();
       await SplashScreen.hide();
     };
