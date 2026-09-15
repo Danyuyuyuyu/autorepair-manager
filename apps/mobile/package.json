@@ -1,0 +1,40 @@
+{
+  "name": "@autorepair/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src vite.config.ts capacitor.config.ts",
+    "sync": "cap sync android",
+    "android:build": "node scripts/android-build.mjs",
+    "assets": "capacitor-assets generate --android --iconBackgroundColor=#2563eb --iconBackgroundColorDark=#1d4ed8 --splashBackgroundColor=#1d4ed8 --splashBackgroundColorDark=#0f172a"
+  },
+  "dependencies": {
+    "@capacitor-community/sqlite": "8.1.1",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.2",
+    "@capacitor/keyboard": "8.0.5",
+    "@capacitor/splash-screen": "8.0.2",
+    "@capacitor/status-bar": "8.0.3",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "7.18.3"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "3.0.5",
+    "@capacitor/android": "8.5.2",
+    "@capacitor/cli": "8.5.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "typescript": "^5.7.0",
+    "vite": "8.3.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

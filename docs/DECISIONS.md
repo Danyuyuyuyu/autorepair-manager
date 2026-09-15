@@ -416,3 +416,20 @@ UI 尚未提供入口（本阶段刻意不改 UI）。
 当前为 82/82（Windows 下包含真实拒绝写 ACL）；正式 bootstrap 的初始行数只有 `users=1`、
 `app_settings=1`，其余业务表均为 0。`pnpm build && pnpm e2e:fresh-install` 另用真实生产进程与
 本机 Edge 验证首次进入登录页、登录 Action、Session 持久化及不创建空备份，当前为 11/11。
+
+---
+
+## ADR-019 · PC 与 Mobile 共享领域契约，不共享运行时和数据库驱动
+
+**背景**：PC 应用依赖 Next.js Server Actions、Node Runtime 与 `node:sqlite`，这些能力不能在
+Capacitor WebView 内离线运行；把 Mobile 指向 PC/云端 URL 又会让手机失去独立离线能力。
+
+**决策**：PC 继续使用 Next.js，不为移动端改造成 Vite。Mobile 位于 `apps/mobile`，使用独立的
+React + Vite 静态客户端，由 Capacitor 8 打包本地资源，禁止配置远端 `server.url`。Mobile 数据库
+固定使用 Android Native SQLite；`com.autorepair.manager` 是当前唯一 applicationId，正式发布前仍可
+整体确认一次。PC `node:sqlite` 与未来 Mobile SQLite 是同一 Repository seam 下的不同 Adapter；
+两端只共享不依赖 `next/*`、`server-only`、`node:*`、Prisma 的 Domain 类型、Repository Contract、
+金额与纯校验，不共享数据库驱动实现。
+
+**代价 / 遗留**：Mobile 必须维护自己的静态路由、系统 UI 生命周期和 SQLite Adapter；Stage 3.1
+只用 `autorepair-mobile-probe` 验证原生桥，正式 Mobile Repository 与业务 schema 留到 Stage 3.2。

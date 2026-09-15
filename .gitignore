@@ -1,5 +1,6 @@
 # dependencies
 /node_modules
+**/node_modules/
 /.pnp
 .pnp.js
 
@@ -11,6 +12,7 @@ next-env.d.ts
 
 # production
 /build
+apps/mobile/dist/
 
 # misc
 .DS_Store

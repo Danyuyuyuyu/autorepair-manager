@@ -22,6 +22,8 @@ const eslintConfig = [
       ".devdb/**",
       // 改造前的基线快照（只用于人工比对与回滚，不参与 lint）
       ".baseline/**",
+      "apps/mobile/android/**",
+      "apps/mobile/dist/**",
     ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
