@@ -1,5 +1,8 @@
 import { CarFront, ClipboardCheck, Database, PackageSearch, UserRoundSearch } from "lucide-react";
+import React from "react";
+import { createPortal } from "react-dom";
 
+import { useMobileRuntime } from "../mobile/mobile-runtime-provider";
 import { SqliteProbePanel } from "../native/sqlite-probe-panel";
 
 function PlaceholderPage({
@@ -119,6 +122,54 @@ export function SettingsPage() {
         <span>键盘避让检查</span>
         <input placeholder="点此唤起软键盘" inputMode="text" />
       </label>
+      <NativeInteractionDiagnostics />
     </section>
+  );
+}
+
+function NativeInteractionDiagnostics() {
+  const { registerOverlayCloser } = useMobileRuntime();
+  const [overlay, setOverlay] = React.useState<"sheet" | "dialog" | null>(null);
+
+  React.useEffect(() => {
+    if (!overlay) return;
+    return registerOverlayCloser(() => setOverlay(null));
+  }, [overlay, registerOverlayCloser]);
+
+  const targetId = overlay === "sheet" ? "mobile-sheet-layer" : "mobile-dialog-layer";
+  const target = overlay ? document.getElementById(targetId) : null;
+
+  return (
+    <>
+      <section className="native-interaction-check" aria-label="原生交互诊断">
+        <div>
+          <span>NATIVE INTERACTION</span>
+          <strong>Android Back 覆盖层检查</strong>
+        </div>
+        <div className="native-interaction-actions">
+          <button type="button" onClick={() => setOverlay("sheet")}>
+            打开诊断 Sheet
+          </button>
+          <button type="button" onClick={() => setOverlay("dialog")}>
+            打开诊断 Dialog
+          </button>
+        </div>
+      </section>
+      {target &&
+        createPortal(
+          <div className={`diagnostic-overlay is-${overlay}`} data-diagnostic-overlay={overlay}>
+            <div className="diagnostic-backdrop" aria-hidden />
+            <section role="dialog" aria-modal="true" aria-label={`诊断 ${overlay}`}>
+              <span>STAGE 3.1-N</span>
+              <strong>{overlay === "sheet" ? "诊断 Sheet 已打开" : "诊断 Dialog 已打开"}</strong>
+              <p>按 Android Back 应只关闭此覆盖层。</p>
+              <button type="button" onClick={() => setOverlay(null)}>
+                关闭
+              </button>
+            </section>
+          </div>,
+          target,
+        )}
+    </>
   );
 }

@@ -7,7 +7,7 @@ const sourcePath = resolve(root, "apps", "mobile", "src", "native", "sqlite-prob
 const source = readFileSync(sourcePath, "utf8");
 const assertions = [
   ["独立 probe DB", '"autorepair-mobile-probe"'],
-  ["Native-only guard", "isNativeMobile()"],
+  ["Android native bridge assertion", 'Capacitor.getPlatform() === "android"'],
   ["create table", "CREATE TABLE IF NOT EXISTS probe_records"],
   ["parameter binding", "VALUES (?, ?, ?, ?)"],
   ["insert", "INSERT OR REPLACE INTO probe_records"],
@@ -19,7 +19,7 @@ const assertions = [
   ["rollback", "rollbackTransaction()"],
   ["close", "db.close()"],
   ["reopen", "db = await connect(sqlite)"],
-  ["Unicode", "汽修管家·原生探针"],
+  ["Unicode", "张三｜粤A12345｜更换机油"],
   ["ISO string", "2026-09-15T08:09:10.123Z"],
   ["Decimal 0.01", '"0.01"'],
   ["Decimal 1.10", '"1.10"'],
@@ -90,20 +90,42 @@ if (install.status !== 0) {
   console.error(install.stderr || install.stdout);
   process.exit(1);
 }
-run(["logcat", "-c"]);
-run(["shell", "am", "force-stop", "com.autorepair.manager"]);
-run(["shell", "monkey", "-p", "com.autorepair.manager", "1"]);
+function launchAndWaitForProbe({ requirePriorRun }) {
+  run(["logcat", "-c"]);
+  run(["shell", "am", "force-stop", "com.autorepair.manager"]);
+  run(["shell", "monkey", "-p", "com.autorepair.manager", "1"]);
 
-const deadline = Date.now() + 30000;
-while (Date.now() < deadline) {
-  const logs = run(["logcat", "-d", "-v", "brief"]).stdout;
-  const match = logs.match(/\[mobile:sqlite-probe\]\s+(\d+)\/(\d+)/);
-  if (match && match[1] === match[2]) {
-    console.log(`[PASS] Native SQLite execution: ${match[1]}/${match[2]} on ${deviceLines[0]}`);
-    process.exit(0);
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    const logs = run(["logcat", "-d", "-v", "brief"]).stdout;
+    const match = logs.match(
+      /\[mobile:sqlite-probe\]\s+(\d+)\/(\d+)\s+platform=(\S+)\s+native=(\S+)\s+priorRunPersisted=(\S+)/,
+    );
+    if (match) {
+      const [, passedRuntime, totalRuntime, platform, native, priorRunPersisted] = match;
+      const runtimePassed = passedRuntime === "18" && totalRuntime === "18";
+      const bridgePassed = platform === "android" && native === "true";
+      const persistencePassed = !requirePriorRun || priorRunPersisted === "true";
+      if (runtimePassed && bridgePassed && persistencePassed) {
+        return { passedRuntime, totalRuntime, platform, native, priorRunPersisted };
+      }
+      console.error(
+        `[FAIL] Native SQLite evidence mismatch: ${match[0]} requirePriorRun=${requirePriorRun}`,
+      );
+      process.exit(1);
+    }
+    pause(500);
   }
-  pause(500);
+
+  console.error("[FAIL] Native SQLite execution: 30 秒内未捕获完整原生探针日志。");
+  process.exit(1);
 }
 
-console.error("[FAIL] Native SQLite execution: 30 秒内未捕获探针全通过日志。");
-process.exit(1);
+const firstRun = launchAndWaitForProbe({ requirePriorRun: false });
+console.log(
+  `[PASS] Native SQLite execution: ${firstRun.passedRuntime}/${firstRun.totalRuntime} platform=${firstRun.platform} native=${firstRun.native} on ${deviceLines[0]}`,
+);
+const secondRun = launchAndWaitForProbe({ requirePriorRun: true });
+console.log(
+  `[PASS] force-stop/reopen persistence: priorRunPersisted=${secondRun.priorRunPersisted}`,
+);

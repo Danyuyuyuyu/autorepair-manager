@@ -226,6 +226,7 @@ a {
 .offline-note,
 .placeholder-card,
 .keyboard-check,
+.native-interaction-check,
 .probe-card {
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -364,6 +365,7 @@ a {
 }
 
 .keyboard-check,
+.native-interaction-check,
 .probe-card {
   padding: 17px;
 }
@@ -371,6 +373,44 @@ a {
 .keyboard-check {
   display: grid;
   gap: 8px;
+}
+
+.native-interaction-check {
+  display: grid;
+  gap: 14px;
+}
+
+.native-interaction-check span {
+  display: block;
+  color: var(--brand-strong);
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.native-interaction-check strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 14px;
+}
+
+.native-interaction-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.native-interaction-actions button,
+.diagnostic-overlay button {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--brand);
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .keyboard-check span,
@@ -503,6 +543,71 @@ a {
   z-index: 60;
   inset: 0;
   pointer-events: none;
+}
+
+.diagnostic-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  display: flex;
+}
+
+.diagnostic-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(15 23 42 / 54%);
+}
+
+.diagnostic-overlay > section {
+  position: relative;
+  width: min(calc(100% - 36px), 430px);
+  padding: 20px;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 20px 60px rgb(15 23 42 / 28%);
+}
+
+.diagnostic-overlay.is-sheet {
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.diagnostic-overlay.is-sheet > section {
+  width: 100%;
+  max-width: 620px;
+  padding-bottom: calc(20px + var(--safe-bottom));
+  border-radius: 24px 24px 0 0;
+}
+
+.diagnostic-overlay.is-dialog {
+  align-items: center;
+  justify-content: center;
+}
+
+.diagnostic-overlay span,
+.diagnostic-overlay strong,
+.diagnostic-overlay p {
+  display: block;
+  margin: 0;
+}
+
+.diagnostic-overlay span {
+  color: var(--brand-strong);
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.diagnostic-overlay strong {
+  margin-top: 6px;
+  font-size: 18px;
+}
+
+.diagnostic-overlay p {
+  margin: 8px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .fatal-screen {

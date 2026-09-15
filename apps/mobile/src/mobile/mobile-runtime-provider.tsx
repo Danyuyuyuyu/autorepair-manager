@@ -37,12 +37,11 @@ export function MobileRuntimeProvider({ children }: React.PropsWithChildren) {
     const handles: Array<{ remove: () => Promise<void> }> = [];
 
     const initialize = async () => {
-      await StatusBar.setOverlaysWebView({ overlay: false });
-      await StatusBar.setBackgroundColor({ color: "#1d4ed8" });
-      await StatusBar.setStyle({ style: Style.Dark });
+      await StatusBar.setStyle({ style: Style.Light });
 
       handles.push(
         await Keyboard.addListener("keyboardWillShow", (info) => {
+          console.info(`[mobile:keyboard] show height=${info.keyboardHeight}`);
           document.documentElement.style.setProperty(
             "--keyboard-height",
             `${info.keyboardHeight}px`,
@@ -50,6 +49,7 @@ export function MobileRuntimeProvider({ children }: React.PropsWithChildren) {
           setKeyboardOpen(true);
         }),
         await Keyboard.addListener("keyboardWillHide", () => {
+          console.info("[mobile:keyboard] hide");
           document.documentElement.style.setProperty("--keyboard-height", "0px");
           setKeyboardOpen(false);
         }),
@@ -61,14 +61,17 @@ export function MobileRuntimeProvider({ children }: React.PropsWithChildren) {
         await App.addListener("backButton", ({ canGoBack }) => {
           const close = overlayClosers.current.at(-1);
           if (close) {
+            console.info("[mobile:back] close-overlay");
             close();
             return;
           }
           if (locationRef.current !== "/") {
+            console.info(`[mobile:back] navigate-from=${locationRef.current}`);
             if (canGoBack) navigate(-1);
             else navigate("/");
             return;
           }
+          console.info("[mobile:back] minimize-root");
           void App.minimizeApp();
         }),
       );
@@ -89,6 +92,10 @@ export function MobileRuntimeProvider({ children }: React.PropsWithChildren) {
       for (const handle of handles) void handle.remove();
     };
   }, [navigate]);
+
+  React.useEffect(() => {
+    if (isNativeMobile()) console.info(`[mobile:route] ${location.pathname}`);
+  }, [location.pathname]);
 
   const registerOverlayCloser = React.useCallback((close: () => void) => {
     overlayClosers.current.push(close);

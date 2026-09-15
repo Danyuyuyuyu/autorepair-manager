@@ -3,12 +3,14 @@ import {
   SQLiteConnection,
   type SQLiteDBConnection,
 } from "@capacitor-community/sqlite";
+import { Capacitor } from "@capacitor/core";
 
 import { isNativeMobile } from "../mobile/runtime";
 
 const PROBE_DATABASE = "autorepair-mobile-probe";
 const PROBE_VERSION = 1;
 const FIXED_ISO = "2026-09-15T08:09:10.123Z";
+const FIXED_UNICODE = "张三｜粤A12345｜更换机油";
 
 export type ProbeStep = { name: string; passed: true; detail: string };
 export type ProbeResult = {
@@ -44,6 +46,10 @@ export async function runNativeSqliteProbe(): Promise<ProbeResult> {
   let transactionActive = false;
 
   try {
+    assert(Capacitor.getPlatform() === "android", "探针未运行在 Android 平台");
+    assert(Capacitor.isNativePlatform(), "探针未通过 Capacitor Native Bridge 运行");
+    pass("Capacitor Native Android Bridge", "platform=android; native=true");
+
     db = await connect(sqlite);
     pass("创建并打开数据库", PROBE_DATABASE);
 
@@ -63,7 +69,7 @@ export async function runNativeSqliteProbe(): Promise<ProbeResult> {
     await db.run("DELETE FROM probe_records WHERE id <> ?", ["persistent"]);
     await db.run(
       "INSERT OR REPLACE INTO probe_records (id, label, iso_text, decimal_text) VALUES (?, ?, ?, ?)",
-      ["roundtrip", "汽修管家·原生探针", FIXED_ISO, "0.01"],
+      ["roundtrip", FIXED_UNICODE, FIXED_ISO, "0.01"],
     );
     pass("参数绑定", "4 个 TEXT 参数");
     pass("INSERT", "roundtrip");
@@ -71,7 +77,7 @@ export async function runNativeSqliteProbe(): Promise<ProbeResult> {
     let rows = await queryRows(db, "SELECT * FROM probe_records WHERE id = ?", ["roundtrip"]);
     assert(rows.length === 1, "SELECT 未返回刚写入的数据");
     pass("SELECT", "1 row");
-    assert(rows[0]?.label === "汽修管家·原生探针", "中文 round-trip 不一致");
+    assert(rows[0]?.label === FIXED_UNICODE, "中文 round-trip 不一致");
     pass("中文 round-trip", rows[0].label);
     assert(rows[0]?.iso_text === FIXED_ISO, "ISO 时间字符串 round-trip 不一致");
     pass("ISO string round-trip", rows[0].iso_text);
@@ -140,9 +146,9 @@ export async function runNativeSqliteProbe(): Promise<ProbeResult> {
     assert(rows.length === 2, "close/reopen 后持久化数据不完整");
     pass("持久化", "commit 与跨启动标记均存在");
 
-    console.info(`[mobile:sqlite-probe] ${steps.length}/${steps.length}`, {
-      priorRunPersisted,
-    });
+    console.info(
+      `[mobile:sqlite-probe] ${steps.length}/${steps.length} platform=${Capacitor.getPlatform()} native=${Capacitor.isNativePlatform()} priorRunPersisted=${priorRunPersisted}`,
+    );
     return { passed: steps.length, total: steps.length, priorRunPersisted, steps };
   } catch (error) {
     if (transactionActive && db) {
